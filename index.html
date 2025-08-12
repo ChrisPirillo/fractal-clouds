@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- SEO: Basic Metadata -->
+    <meta charset="UTF-8">
+    <title>Fractal Clouds</title>
+    <meta name="description" content="An interactive, real-time fractal cloud visualizer running in the browser using WebGL. Adjust parameters like speed, color, and geometry to create unique animated fractal patterns.">
+    <meta name="keywords" content="fractal, clouds, visualizer, webgl, interactive, generative art, shader, animation, Chris Pirillo, arcade">
+    <meta name="author" content="Chris Pirillo">
+
+    <!-- SEO: Viewport & Canonical URL -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="canonical" href="https://pirillo.com/arcade/fractal-clouds.html">
+
+    <!-- SEO: Open Graph / Facebook Card -->
+    <meta property="og:title" content="Fractal Clouds">
+    <meta property="og:description" content="An interactive, real-time fractal cloud visualizer running in the browser.">
+    <meta property="og:image" content="https://pirillo.com/arcade/images/fractal-clouds.png">
+    <meta property="og:url" content="https://pirillo.com/arcade/fractal-clouds.html">
+    <meta property="og:site_name" content="Chris Pirillo's Arcade">
+    <meta property="og:type" content="website">
+
+    <!-- SEO: Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@ChrisPirillo">
+    <meta name="twitter:creator" content="@ChrisPirillo">
+    <meta name="twitter:title" content="Fractal Clouds">
+    <meta name="twitter:description" content="An interactive, real-time fractal cloud visualizer running in the browser.">
+    <meta name="twitter:image" content="https://pirillo.com/arcade/images/fractal-clouds.png">
+
+    <!-- Performance: Resource Hints -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://www.googletagmanager.com">
+    
+    <!-- Performance: Preload critical resources -->
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&display=swap"></noscript>
+    
+    <!-- Non-deferred as per instructions to prevent FOUC with script-based Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Inlined CSS for fast initial render -->
+    <style>
+        /* NOTE: This CSS is inlined to prevent render-blocking requests. */
+        body {
+            font-family: 'Orbitron', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            height: 100vh;
+            width: 100vw;
+            user-select: none;
+            -webkit-user-select: none; /* Safari */
+            -moz-user-select: none; /* Firefox */
+            -ms-user-select: none; /* IE10+/Edge */
+        }
+        #shader-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        #controls-toggle {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 5; /* Ensure toggle is on top */
+            width: 56px;
+            height: 56px;
+            background-color: rgba(30, 30, 30, 0.8);
+            backdrop-filter: blur(10px);
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            pointer-events: all;
+            transition: transform 0.3s ease, left 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+        #controls-toggle.is-open {
+            left: 320px; /* 300px panel width + 20px padding */
+        }
+        #controls-toggle:hover {
+            transform: scale(1.1);
+        }
+        #controls-toggle svg {
+            width: 28px;
+            height: 28px;
+            color: white;
+            transition: transform 0.3s ease;
+        }
+        #icon-open { display: block; }
+        #icon-close { display: none; }
+        #controls-toggle.is-open #icon-open { transform: rotate(180deg); }
+        #controls-toggle.is-open #icon-close { transform: rotate(0deg); }
+        #controls-toggle #icon-close { transform: rotate(-180deg); }
+
+        #controls-panel {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            width: 300px;
+            z-index: 4; /* Ensure panel is on top of canvas */
+            background-color: rgba(10, 10, 10, 0.85);
+            backdrop-filter: blur(12px);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            box-shadow: 10px 0 30px rgba(0,0,0,0.3);
+            transform: translateX(-100%);
+            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            pointer-events: all;
+            overflow-y: auto;
+        }
+        #controls-panel.is-open {
+            transform: translateX(0);
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        label {
+            font-size: 14px;
+            font-weight: 500;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 3px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            background: #00aaff;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 3px solid #111;
+            box-shadow: 0 0 10px rgba(0, 170, 255, 0.5);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            background: #00aaff;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 3px solid #111;
+        }
+        .value-display {
+            font-size: 14px;
+            text-align: right;
+            opacity: 0.7;
+            font-family: 'Orbitron', monospace;
+        }
+        h2 {
+            font-size: 22px;
+            font-weight: 700;
+            text-align: center;
+            letter-spacing: 0.02em;
+            padding-bottom: 10px;
+        }
+        hr {
+            border: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            margin: 10px 0;
+        }
+        #error-message {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #111; color: white; z-index: 10;
+            display: none; justify-content: center; align-items: center;
+            text-align: center; padding: 20px; font-size: 18px;
+            flex-direction: column; gap: 10px;
+        }
+    </style>
+
+    <!-- SEO: JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Fractal Clouds",
+      "description": "An interactive, real-time fractal cloud visualizer running in the browser using WebGL. Adjust parameters like speed, color, and geometry to create unique animated fractal patterns.",
+      "url": "https://pirillo.com/arcade/fractal-clouds.html",
+      "applicationCategory": "MultimediaApplication",
+      "operatingSystem": "All",
+      "browserRequirements": "Requires WebGL support.",
+      "author": {
+        "@type": "Person",
+        "name": "Chris Pirillo",
+        "url": "https://pirillo.com"
+      },
+      "creator": {
+        "@type": "Person",
+        "name": "Chris Pirillo",
+        "url": "https://pirillo.com"
+      },
+      "image": "https://pirillo.com/arcade/images/fractal-clouds.png",
+      "offers": {
+        "@type": "Offer",
+        "price": "0"
+      }
+    }
+    </script>
+    
+    <!-- Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-1CQ4D3VQ3L"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-1CQ4D3VQ3L');
+    </script>
+
+</head>
+<body>
+    <!-- SEO: Using semantic <main> tag for primary content -->
+    <main>
+        <!-- CLS: Explicitly setting canvas width/height to 0; JS will resize it. Prevents potential layout shift. -->
+        <canvas id="shader-canvas" width="0" height="0" aria-label="Fractal Clouds Visualizer"></canvas>
+
+        <div id="error-message">
+            <div>
+                <h1 style="font-size: 24px; font-weight: bold; color: #ff4d4d;">SYSTEM ERROR</h1>
+                <p>WebGL rendering context failed to initialize. This experience requires a compatible browser and device.</p>
+            </div>
+        </div>
+
+        <!-- SEO: Using semantic <aside> for the controls panel -->
+        <aside id="controls-panel">
+            <h1>Fractal Clouds</h1>
+            <section class="control-group" aria-labelledby="animation-heading">
+                <h2 id="animation-heading" class="sr-only">Animation Controls</h2>
+                <div class="flex justify-between items-center"><label for="speed">Animation Speed</label><span id="speed-value" class="value-display">0.50</span></div>
+                <input type="range" id="speed" min="0.0" max="2.0" step="0.05" value="0.5">
+            </section>
+            <hr>
+            <section class="control-group" aria-labelledby="performance-heading">
+                <h2 id="performance-heading">Performance</h2>
+                <div class="flex justify-between items-center"><label for="iterations">Iterations</label><span id="iterations-value" class="value-display">81</span></div>
+                <input type="range" id="iterations" min="10" max="81" step="1" value="81">
+                <div class="flex justify-between items-center"><label for="resolution-scale">Resolution Scale</label><span id="resolution-scale-value" class="value-display">0.50</span></div>
+                <input type="range" id="resolution-scale" min="0.25" max="1.0" step="0.05" value="0.5">
+            </section>
+            <hr>
+            <section class="control-group" aria-labelledby="color-heading">
+                <h2 id="color-heading">Color</h2>
+                <div class="flex justify-between items-center"><label for="brightness">Brightness</label><span id="brightness-value" class="value-display">24.0</span></div>
+                <input type="range" id="brightness" min="15.0" max="50.0" step="0.5" value="24.0">
+                <div class="flex justify-between items-center"><label for="hue-shift">Hue Shift</label><span id="hue-shift-value" class="value-display">0.00</span></div>
+                <input type="range" id="hue-shift" min="-1.0" max="1.0" step="0.01" value="0.0">
+                <div class="flex justify-between items-center"><label for="saturation">Saturation</label><span id="saturation-value" class="value-display">1.00</span></div>
+                <input type="range" id="saturation" min="0.0" max="2.0" step="0.05" value="1.0">
+            </section>
+            <hr>
+            <section class="control-group" aria-labelledby="geometry-heading">
+                <h2 id="geometry-heading">Geometry</h2>
+                <div class="flex justify-between items-center"><label for="rotation-speed">Rotation Speed</label><span id="rotation-speed-value" class="value-display">0.00</span></div>
+                <input type="range" id="rotation-speed" min="-0.5" max="0.5" step="0.01" value="0.0">
+                <div class="flex justify-between items-center"><label for="scale">Complexity</label><span id="scale-value" class="value-display">0.18</span></div>
+                <input type="range" id="scale" min="0.1" max="0.5" step="0.01" value="0.18">
+                <div class="flex justify-between items-center"><label for="inversion-point">Vector Inversion</label><span id="inversion-point-value" class="value-display">59</span></div>
+                <input type="range" id="inversion-point" min="10" max="80" step="1" value="59">
+                <div class="flex justify-between items-center"><label for="detail-level">Detail Level</label><span id="detail-level-value" class="value-display">12</span></div>
+                <input type="range" id="detail-level" min="4" max="12" step="1" value="12">
+                 <div class="flex justify-between items-center"><label for="shape-x">Shape X</label><span id="shape-x-value" class="value-display">1.00</span></div>
+                <input type="range" id="shape-x" min="-2.0" max="2.0" step="0.05" value="1.0">
+                 <div class="flex justify-between items-center"><label for="shape-y">Shape Y</label><span id="shape-y-value" class="value-display">1.00</span></div>
+                <input type="range" id="shape-y" min="1" max="2.0" step="0.05" value="1.0">
+                 <div class="flex justify-between items-center"><label for="shape-z">Shape Z</label><span id="shape-z-value" class="value-display">1.00</span></div>
+                <input type="range" id="shape-z" min="-2.0" max="2.0" step="0.05" value="1.0">
+                 <div class="flex justify-between items-center"><label for="detail-freq">Detail Frequency</label><span id="detail-freq-value" class="value-display">1.00</span></div>
+                <input type="range" id="detail-freq" min="0.3" max="5.0" step="0.05" value="1.0">
+                <div class="flex justify-between items-center"><label for="origin-x">Origin X</label><span id="origin-x-value" class="value-display">0.70</span></div>
+                <input type="range" id="origin-x" min="-1.0" max="2.0" step="0.05" value="0.7">
+                <div class="flex justify-between items-center"><label for="origin-y">Origin Y</label><span id="origin-y-value" class="value-display">0.50</span></div>
+                <input type="range" id="origin-y" min="-1.0" max="2.0" step="0.05" value="0.5">
+            </section>
+        </aside>
+        
+        <button id="controls-toggle" aria-label="Toggle controls panel">
+            <svg id="icon-open" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" role="img"><title>Open Controls</title><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 12h9.75M10.5 18h9.75M3.75 6H6m-2.25 6H6m-2.25 6H6" /></svg>
+            <svg id="icon-close" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="display:none;" role="img"><title>Close Controls</title><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+    </main>
+
+    <!-- NOTE: Shader scripts are data blocks, not executable JS. Their placement is fine. -->
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        void main() {
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        #ifdef GL_ES
+        precision highp float;
+        #endif
+
+        uniform vec2 u_resolution;
+        uniform float u_time;
+        // Performance
+        uniform float u_iterations;
+        // Color uniforms
+        uniform float u_brightness;
+        uniform float u_hue_shift;
+        uniform float u_saturation;
+        // Geometry uniforms
+        uniform float u_scale;
+        uniform float u_speed;
+        uniform float u_rotation_speed;
+        uniform float u_inversion_point;
+        uniform float u_detail_level;
+        uniform float u_shape_x;
+        uniform float u_shape_y;
+        uniform float u_shape_z;
+        uniform float u_detail_freq;
+        uniform float u_origin_x;
+        uniform float u_origin_y;
+
+        vec3 hsv2rgb(vec3 c) {
+            vec3 rgb = clamp(abs(mod(c.x*6.0+vec3(0.0,4.0,2.0),6.0)-3.0)-1.0, 0.0, 1.0);
+            return c.z * mix(vec3(1.0), rgb, c.y);
+        }
+
+        void process_iteration(inout vec4 o, inout float e, inout float R, inout vec3 q, inout vec3 d, float i) {
+            vec3 p;
+            float s;
+
+            if (i > u_inversion_point) { d = -d; }
+            e += i / 1000.0;
+            o.rgb += hsv2rgb(vec3(i - 0.4 + u_hue_shift, d.z * u_saturation, e / u_brightness));
+            s = 1.0;
+            p = q += d * e * R * u_scale;
+            R = length(p);
+            if (R > 0.001) {
+                vec3 p_temp = p;
+                float log_val = log2(R) - u_time * u_speed;
+                p = vec3(
+                    u_shape_x * clamp(log_val, -50.0, 50.0), 
+                    u_shape_y * (-p_temp.z / R), 
+                    u_shape_z * atan(p_temp.x, p_temp.y)
+                );
+            } else {
+                p = vec3(0.0);
+            }
+            e = --p.y;
+            
+            if (u_detail_level > 0.0) { e += cos(dot(cos(p.zyz * s * u_detail_freq), cos(p.xxy * s * u_detail_freq))) / s; s *= 2.0; }
+            if (u_detail_level > 1.0) { e += cos(dot(cos(p.zyz * s * u_detail_freq), cos(p.xxy * s * u_detail_freq))) / s; s *= 2.0; }
+            if (u_detail_level > 2.0) { e += cos(dot(cos(p.zyz * s * u_detail_freq), cos(p.xxy * s * u_detail_freq))) / s; s *= 2.0; }
+            if (u_detail_level > 3.0) { e += cos(dot(cos(p.zyz * s * u_detail_freq), cos(p.xxy * s * u_detail_freq))) / s; s *= 2.0; }
+            if (u_detail_level > 4.0) { e += cos(dot(cos(p.zyz * s * u_detail_freq), cos(p.xxy * s * u_detail_freq))) / s; s *= 2.0; }
+            if (u_detail_level > 5.0) { e += cos(dot(cos(p.zyz * s * u_detail_freq), cos(p.xxy * s * u_detail_freq))) / s; s *= 2.0; }
+            if (u_detail_level > 6.0) { e += cos(dot(cos(p.zyz * s * u_detail_freq), cos(p.xxy * s * u_detail_freq))) / s; s *= 2.0; }
+            if (u_detail_level > 7.0) { e += cos(dot(cos(p.zyz * s * u_detail_freq), cos(p.xxy * s * u_detail_freq))) / s; s *= 2.0; }
+            if (u_detail_level > 8.0) { e += cos(dot(cos(p.zyz * s * u_detail_freq), cos(p.xxy * s * u_detail_freq))) / s; s *= 2.0; }
+            if (u_detail_level > 9.0) { e += cos(dot(cos(p.zyz * s * u_detail_freq), cos(p.xxy * s * u_detail_freq))) / s; s *= 2.0; }
+            if (u_detail_level > 10.0) { e += cos(dot(cos(p.zyz * s * u_detail_freq), cos(p.xxy * s * u_detail_freq))) / s; s *= 2.0; }
+            if (u_detail_level > 11.0) { e += cos(dot(cos(p.zyz * s * u_detail_freq), cos(p.xxy * s * u_detail_freq))) / s; s *= 2.0; }
+        }
+
+        void main() {
+            vec4 o = vec4(0.0, 0.0, 0.0, 1.0);
+            float e = 0.0, R = 0.0;
+            vec3 q = vec3(-1.0);
+            vec3 d = vec3(gl_FragCoord.xy/u_resolution.y - vec2(u_origin_x, u_origin_y), 1.0);
+
+            // Apply rotation
+            float angle = u_time * u_rotation_speed;
+            float s = sin(angle);
+            float c = cos(angle);
+            mat2 rotationMatrix = mat2(c, -s, s, c);
+            d.xy = rotationMatrix * d.xy;
+
+            if (u_iterations > 0.0) process_iteration(o, e, R, q, d, 0.0); if (u_iterations > 1.0) process_iteration(o, e, R, q, d, 1.0); if (u_iterations > 2.0) process_iteration(o, e, R, q, d, 2.0); if (u_iterations > 3.0) process_iteration(o, e, R, q, d, 3.0); if (u_iterations > 4.0) process_iteration(o, e, R, q, d, 4.0); if (u_iterations > 5.0) process_iteration(o, e, R, q, d, 5.0); if (u_iterations > 6.0) process_iteration(o, e, R, q, d, 6.0); if (u_iterations > 7.0) process_iteration(o, e, R, q, d, 7.0); if (u_iterations > 8.0) process_iteration(o, e, R, q, d, 8.0); if (u_iterations > 9.0) process_iteration(o, e, R, q, d, 9.0); if (u_iterations > 10.0) process_iteration(o, e, R, q, d, 10.0); if (u_iterations > 11.0) process_iteration(o, e, R, q, d, 11.0); if (u_iterations > 12.0) process_iteration(o, e, R, q, d, 12.0); if (u_iterations > 13.0) process_iteration(o, e, R, q, d, 13.0); if (u_iterations > 14.0) process_iteration(o, e, R, q, d, 14.0); if (u_iterations > 15.0) process_iteration(o, e, R, q, d, 15.0); if (u_iterations > 16.0) process_iteration(o, e, R, q, d, 16.0); if (u_iterations > 17.0) process_iteration(o, e, R, q, d, 17.0); if (u_iterations > 18.0) process_iteration(o, e, R, q, d, 18.0); if (u_iterations > 19.0) process_iteration(o, e, R, q, d, 19.0); if (u_iterations > 20.0) process_iteration(o, e, R, q, d, 20.0); if (u_iterations > 21.0) process_iteration(o, e, R, q, d, 21.0); if (u_iterations > 22.0) process_iteration(o, e, R, q, d, 22.0); if (u_iterations > 23.0) process_iteration(o, e, R, q, d, 23.0); if (u_iterations > 24.0) process_iteration(o, e, R, q, d, 24.0); if (u_iterations > 25.0) process_iteration(o, e, R, q, d, 25.0); if (u_iterations > 26.0) process_iteration(o, e, R, q, d, 26.0); if (u_iterations > 27.0) process_iteration(o, e, R, q, d, 27.0); if (u_iterations > 28.0) process_iteration(o, e, R, q, d, 28.0); if (u_iterations > 29.0) process_iteration(o, e, R, q, d, 29.0); if (u_iterations > 30.0) process_iteration(o, e, R, q, d, 30.0); if (u_iterations > 31.0) process_iteration(o, e, R, q, d, 31.0); if (u_iterations > 32.0) process_iteration(o, e, R, q, d, 32.0); if (u_iterations > 33.0) process_iteration(o, e, R, q, d, 33.0); if (u_iterations > 34.0) process_iteration(o, e, R, q, d, 34.0); if (u_iterations > 35.0) process_iteration(o, e, R, q, d, 35.0); if (u_iterations > 36.0) process_iteration(o, e, R, q, d, 36.0); if (u_iterations > 37.0) process_iteration(o, e, R, q, d, 37.0); if (u_iterations > 38.0) process_iteration(o, e, R, q, d, 38.0); if (u_iterations > 39.0) process_iteration(o, e, R, q, d, 39.0); if (u_iterations > 40.0) process_iteration(o, e, R, q, d, 40.0); if (u_iterations > 41.0) process_iteration(o, e, R, q, d, 41.0); if (u_iterations > 42.0) process_iteration(o, e, R, q, d, 42.0); if (u_iterations > 43.0) process_iteration(o, e, R, q, d, 43.0); if (u_iterations > 44.0) process_iteration(o, e, R, q, d, 44.0); if (u_iterations > 45.0) process_iteration(o, e, R, q, d, 45.0); if (u_iterations > 46.0) process_iteration(o, e, R, q, d, 46.0); if (u_iterations > 47.0) process_iteration(o, e, R, q, d, 47.0); if (u_iterations > 48.0) process_iteration(o, e, R, q, d, 48.0); if (u_iterations > 49.0) process_iteration(o, e, R, q, d, 49.0); if (u_iterations > 50.0) process_iteration(o, e, R, q, d, 50.0); if (u_iterations > 51.0) process_iteration(o, e, R, q, d, 51.0); if (u_iterations > 52.0) process_iteration(o, e, R, q, d, 52.0); if (u_iterations > 53.0) process_iteration(o, e, R, q, d, 53.0); if (u_iterations > 54.0) process_iteration(o, e, R, q, d, 54.0); if (u_iterations > 55.0) process_iteration(o, e, R, q, d, 55.0); if (u_iterations > 56.0) process_iteration(o, e, R, q, d, 56.0); if (u_iterations > 57.0) process_iteration(o, e, R, q, d, 57.0); if (u_iterations > 58.0) process_iteration(o, e, R, q, d, 58.0); if (u_iterations > 59.0) process_iteration(o, e, R, q, d, 59.0); if (u_iterations > 60.0) process_iteration(o, e, R, q, d, 60.0); if (u_iterations > 61.0) process_iteration(o, e, R, q, d, 61.0); if (u_iterations > 62.0) process_iteration(o, e, R, q, d, 62.0); if (u_iterations > 63.0) process_iteration(o, e, R, q, d, 63.0); if (u_iterations > 64.0) process_iteration(o, e, R, q, d, 64.0); if (u_iterations > 65.0) process_iteration(o, e, R, q, d, 65.0); if (u_iterations > 66.0) process_iteration(o, e, R, q, d, 66.0); if (u_iterations > 67.0) process_iteration(o, e, R, q, d, 67.0); if (u_iterations > 68.0) process_iteration(o, e, R, q, d, 68.0); if (u_iterations > 69.0) process_iteration(o, e, R, q, d, 69.0); if (u_iterations > 70.0) process_iteration(o, e, R, q, d, 70.0); if (u_iterations > 71.0) process_iteration(o, e, R, q, d, 71.0); if (u_iterations > 72.0) process_iteration(o, e, R, q, d, 72.0); if (u_iterations > 73.0) process_iteration(o, e, R, q, d, 73.0); if (u_iterations > 74.0) process_iteration(o, e, R, q, d, 74.0); if (u_iterations > 75.0) process_iteration(o, e, R, q, d, 75.0); if (u_iterations > 76.0) process_iteration(o, e, R, q, d, 76.0); if (u_iterations > 77.0) process_iteration(o, e, R, q, d, 77.0); if (u_iterations > 78.0) process_iteration(o, e, R, q, d, 78.0); if (u_iterations > 79.0) process_iteration(o, e, R, q, d, 79.0); if (u_iterations > 80.0) process_iteration(o, e, R, q, d, 80.0);
+
+            gl_FragColor = o;
+        }
+    </script>
+
+    <!-- NOTE: UNCHANGED JAVASCRIPT as per instructions. Placed at the end of <body> to be non-render-blocking. -->
+    <script>
+        // Self-executing function to encapsulate scope and handle errors
+        (function() {
+            try {
+                // --- Get DOM Elements ---
+                const canvas = document.getElementById('shader-canvas');
+                const errorMessage = document.getElementById('error-message');
+                const toggleButton = document.getElementById('controls-toggle');
+                const controlsPanel = document.getElementById('controls-panel');
+
+                // --- WebGL Initialization ---
+                const gl = canvas.getContext('webgl', { antialias: false, powerPreference: 'high-performance' });
+                if (!gl) {
+                    throw new Error('WebGL not supported');
+                }
+
+                // --- Shader Compilation ---
+                function createShader(gl, type, source) {
+                    const shader = gl.createShader(type);
+                    gl.shaderSource(shader, source);
+                    gl.compileShader(shader);
+                    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                        const info = gl.getShaderInfoLog(shader);
+                        gl.deleteShader(shader);
+                        throw new Error('Shader compile error: ' + info);
+                    }
+                    return shader;
+                }
+
+                function createProgram(gl, vertexShader, fragmentShader) {
+                    const program = gl.createProgram();
+                    gl.attachShader(program, vertexShader);
+                    gl.attachShader(program, fragmentShader);
+                    gl.linkProgram(program);
+                    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                        const info = gl.getProgramInfoLog(program);
+                        gl.deleteProgram(program);
+                        throw new Error('Program link error: ' + info);
+                    }
+                    return program;
+                }
+
+                const vertexShaderSource = document.getElementById('vertex-shader').text;
+                const fragmentShaderSource = document.getElementById('fragment-shader').text;
+                const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+                const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+                const program = createProgram(gl, vertexShader, fragmentShader);
+
+                // --- Geometry & Uniforms ---
+                const positionAttributeLocation = gl.getAttribLocation(program, 'a_position');
+                const resolutionUniformLocation = gl.getUniformLocation(program, 'u_resolution');
+                const timeUniformLocation = gl.getUniformLocation(program, 'u_time');
+                
+                const uniformLocations = {
+                    iterations: gl.getUniformLocation(program, 'u_iterations'),
+                    scale: gl.getUniformLocation(program, 'u_scale'),
+                    brightness: gl.getUniformLocation(program, 'u_brightness'),
+                    speed: gl.getUniformLocation(program, 'u_speed'),
+                    rotationSpeed: gl.getUniformLocation(program, 'u_rotation_speed'),
+                    hueShift: gl.getUniformLocation(program, 'u_hue_shift'),
+                    saturation: gl.getUniformLocation(program, 'u_saturation'),
+                    inversionPoint: gl.getUniformLocation(program, 'u_inversion_point'),
+                    detailLevel: gl.getUniformLocation(program, 'u_detail_level'),
+                    shapeX: gl.getUniformLocation(program, 'u_shape_x'),
+                    shapeY: gl.getUniformLocation(program, 'u_shape_y'),
+                    shapeZ: gl.getUniformLocation(program, 'u_shape_z'),
+                    detailFreq: gl.getUniformLocation(program, 'u_detail_freq'),
+                    originX: gl.getUniformLocation(program, 'u_origin_x'),
+                    originY: gl.getUniformLocation(program, 'u_origin_y')
+                };
+                
+                const positionBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+
+                // --- UI Controls ---
+                const sliders = {
+                    iterations: { el: document.getElementById('iterations'), value: 81, display: document.getElementById('iterations-value'), format: v => parseInt(v) },
+                    resolutionScale: { el: document.getElementById('resolution-scale'), value: 0.5, display: document.getElementById('resolution-scale-value'), format: v => v.toFixed(2) },
+                    scale: { el: document.getElementById('scale'), value: 0.18, display: document.getElementById('scale-value'), format: v => v.toFixed(2) },
+                    brightness: { el: document.getElementById('brightness'), value: 24.0, display: document.getElementById('brightness-value'), format: v => v.toFixed(1) },
+                    speed: { el: document.getElementById('speed'), value: 0.5, display: document.getElementById('speed-value'), format: v => v.toFixed(2) },
+                    rotationSpeed: { el: document.getElementById('rotation-speed'), value: 0.0, display: document.getElementById('rotation-speed-value'), format: v => v.toFixed(2) },
+                    hueShift: { el: document.getElementById('hue-shift'), value: 0.0, display: document.getElementById('hue-shift-value'), format: v => v.toFixed(2) },
+                    saturation: { el: document.getElementById('saturation'), value: 1.0, display: document.getElementById('saturation-value'), format: v => v.toFixed(2) },
+                    inversionPoint: { el: document.getElementById('inversion-point'), value: 59, display: document.getElementById('inversion-point-value'), format: v => parseInt(v) },
+                    detailLevel: { el: document.getElementById('detail-level'), value: 12, display: document.getElementById('detail-level-value'), format: v => parseInt(v) },
+                    shapeX: { el: document.getElementById('shape-x'), value: 1.0, display: document.getElementById('shape-x-value'), format: v => v.toFixed(2) },
+                    shapeY: { el: document.getElementById('shape-y'), value: 1.0, display: document.getElementById('shape-y-value'), format: v => v.toFixed(2) },
+                    shapeZ: { el: document.getElementById('shape-z'), value: 1.0, display: document.getElementById('shape-z-value'), format: v => v.toFixed(2) },
+                    detailFreq: { el: document.getElementById('detail-freq'), value: 1.0, display: document.getElementById('detail-freq-value'), format: v => v.toFixed(2) },
+                    originX: { el: document.getElementById('origin-x'), value: 0.7, display: document.getElementById('origin-x-value'), format: v => v.toFixed(2) },
+                    originY: { el: document.getElementById('origin-y'), value: 0.5, display: document.getElementById('origin-y-value'), format: v => v.toFixed(2) }
+                };
+                
+                // Initialize display values from defaults
+                for (const key in sliders) {
+                    const s = sliders[key];
+                    s.display.textContent = s.format(s.value);
+                    s.el.addEventListener('input', (e) => {
+                        s.value = parseFloat(e.target.value);
+                        s.display.textContent = s.format(s.value);
+                    });
+                }
+
+                // --- Menu Toggle Logic ---
+                const iconOpen = document.getElementById('icon-open');
+                const iconClose = document.getElementById('icon-close');
+                toggleButton.addEventListener('click', () => {
+                    const isOpen = controlsPanel.classList.toggle('is-open');
+                    toggleButton.classList.toggle('is-open', isOpen);
+                    iconOpen.style.display = isOpen ? 'none' : 'block';
+                    iconClose.style.display = isOpen ? 'block' : 'none';
+                });
+
+                // --- Render Loop ---
+                let resolutionScale = 0.5; // Keep track of the current scale
+                function render(time) {
+                    try {
+                        time *= 0.001; // convert time to seconds
+
+                        if (resolutionScale !== sliders.resolutionScale.value) {
+                            resolutionScale = sliders.resolutionScale.value;
+                            const dpr = window.devicePixelRatio || 1;
+                            const displayWidth  = Math.floor(canvas.clientWidth * dpr * resolutionScale);
+                            const displayHeight = Math.floor(canvas.clientHeight * dpr * resolutionScale);
+
+                            if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+                                canvas.width  = displayWidth;
+                                canvas.height = displayHeight;
+                                gl.viewport(0, 0, canvas.width, canvas.height);
+                            }
+                        }
+
+                        gl.useProgram(program);
+                        gl.enableVertexAttribArray(positionAttributeLocation);
+                        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                        gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+                        gl.uniform2f(resolutionUniformLocation, canvas.width, canvas.height);
+                        gl.uniform1f(timeUniformLocation, time);
+                        
+                        gl.uniform1f(uniformLocations.iterations, sliders.iterations.value);
+                        gl.uniform1f(uniformLocations.scale, sliders.scale.value);
+                        gl.uniform1f(uniformLocations.brightness, sliders.brightness.value);
+                        gl.uniform1f(uniformLocations.speed, sliders.speed.value);
+                        gl.uniform1f(uniformLocations.rotationSpeed, sliders.rotationSpeed.value);
+                        gl.uniform1f(uniformLocations.hueShift, sliders.hueShift.value);
+                        gl.uniform1f(uniformLocations.saturation, sliders.saturation.value);
+                        gl.uniform1f(uniformLocations.inversionPoint, sliders.inversionPoint.value);
+                        gl.uniform1f(uniformLocations.detailLevel, sliders.detailLevel.value);
+                        gl.uniform1f(uniformLocations.shapeX, sliders.shapeX.value);
+                        gl.uniform1f(uniformLocations.shapeY, sliders.shapeY.value);
+                        gl.uniform1f(uniformLocations.shapeZ, sliders.shapeZ.value);
+                        gl.uniform1f(uniformLocations.detailFreq, sliders.detailFreq.value);
+                        gl.uniform1f(uniformLocations.originX, sliders.originX.value);
+                        gl.uniform1f(uniformLocations.originY, sliders.originY.value);
+
+                        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                    } catch(e) {
+                        console.error("Render loop error:", e);
+                        return; 
+                    }
+                    requestAnimationFrame(render);
+                }
+                
+                // Initial canvas sizing
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = Math.floor(canvas.clientWidth * dpr * sliders.resolutionScale.value);
+                canvas.height = Math.floor(canvas.clientHeight * dpr * sliders.resolutionScale.value);
+                gl.viewport(0, 0, canvas.width, canvas.height);
+
+                requestAnimationFrame(render);
+
+            } catch (error) {
+                console.error("Initialization failed:", error);
+                const errorMessage = document.getElementById('error-message');
+                const controlsPanel = document.getElementById('controls-panel');
+                const toggleButton = document.getElementById('controls-toggle');
+                if (errorMessage) errorMessage.style.display = 'flex';
+                if (controlsPanel) controlsPanel.style.display = 'none';
+                if (toggleButton) toggleButton.style.display = 'none';
+            }
+        })();
+    </script>
+</body>
+</html>
